@@ -4,9 +4,6 @@ on:
   schedule:
     - cron: '* * * * *'  # Ежедневно в полночь
   workflow_dispatch:      # Ручной запуск
-  push:
-    paths:
-      - 'avatars/**'     # Запуск при изменении файлов в avatars
 
 jobs:
   update-avatar:
@@ -38,7 +35,6 @@ jobs:
           
           if [ $TOTAL_AVATARS -eq 0 ]; then
             echo "❌ ERROR: No image files found in avatars directory!"
-            echo "💡 Please add PNG/JPG files to the avatars folder"
             exit 1
           fi
           
@@ -48,44 +44,41 @@ jobs:
           
           echo "SELECTED_AVATAR=$SELECTED_AVATAR" >> $GITHUB_ENV
           echo "🎲 Selected: $SELECTED_AVATAR"
-          echo "🔢 Index: $RANDOM_INDEX of $TOTAL_AVATARS"
 
-      - name: Validate selected avatar
+      - name: Validate and optimize avatar
         run: |
           echo "🔍 Validating selected avatar..."
-          echo "📁 File: $SELECTED_AVATAR"
-          
-          # Проверяем существование файла
-          if [ ! -f "$SELECTED_AVATAR" ]; then
-            echo "❌ ERROR: Selected file not found!"
-            exit 1
-          fi
-          
-          # Проверяем размер файла
           FILE_SIZE=$(wc -c < "$SELECTED_AVATAR")
-          echo "📏 File size: $FILE_SIZE bytes"
+          echo "📏 Original file size: $FILE_SIZE bytes"
           
-          if [ $FILE_SIZE -gt 1000000 ]; then
-            echo "⚠️ WARNING: File size exceeds 1MB recommended limit"
-          fi
-          
-          # Проверяем тип файла
-          FILE_TYPE=$(file -b "$SELECTED_AVATAR")
-          echo "📄 File type: $FILE_TYPE"
-          
-          if [[ ! "$FILE_TYPE" =~ (PNG|JPEG|JPEG image) ]]; then
-            echo "❌ ERROR: File is not a valid PNG/JPEG image!"
-            exit 1
+          # Если файл больше 500KB, оптимизируем его
+          if [ $FILE_SIZE -gt 500000 ]; then
+            echo "⚡ File is large, optimizing..."
+            if command -v convert &> /dev/null; then
+              # Используем ImageMagick для сжатия
+              cp "$SELECTED_AVATAR" "optimized_avatar"
+              convert "optimized_avatar" -resize 400x400 -quality 85 "optimized_avatar"
+              OPTIMIZED_SIZE=$(wc -c < "optimized_avatar")
+              echo "📐 Optimized file size: $OPTIMIZED_SIZE bytes"
+              echo "OPTIMIZED_AVATAR=optimized_avatar" >> $GITHUB_ENV
+            else
+              echo "⚠️ ImageMagick not available, using original file"
+              echo "OPTIMIZED_AVATAR=$SELECTED_AVATAR" >> $GITHUB_ENV
+            fi
+          else
+            echo "✅ File size is acceptable"
+            echo "OPTIMIZED_AVATAR=$SELECTED_AVATAR" >> $GITHUB_ENV
           fi
 
-      - name: Update GitHub avatar via API
+      - name: Update GitHub avatar
         env:
           GH_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
         run: |
           echo "🔄 Updating profile avatar..."
           
-          # Конвертируем изображение в base64
-          AVATAR_BASE64=$(base64 -w 0 "$SELECTED_AVATAR")
+          # Используем временный файл для данных
+          BASE64_FILE="avatar_base64.txt"
+          base64 -w 0 "$OPTIMIZED_AVATAR" > "$BASE64_FILE"
           
           # Определяем MIME тип
           if [[ "$SELECTED_AVATAR" == *.png ]]; then
@@ -98,29 +91,36 @@ jobs:
           
           echo "🖼️ MIME type: $MIME_TYPE"
           
-          # Обновляем аватар через GitHub API
+          # Читаем base64 из файла и отправляем через временный файл
+          JSON_FILE="request.json"
+          echo "{\"avatar_url\": \"data:$MIME_TYPE;base64,$(cat $BASE64_FILE)\"}" > "$JSON_FILE"
+          
+          # Отправляем запрос с файлом вместо командной строки
           RESPONSE=$(curl -s -w "%{http_code}" -X PATCH \
             -H "Authorization: token $GH_TOKEN" \
             -H "Accept: application/vnd.github.v3+json" \
             -H "Content-Type: application/json" \
-            https://api.github.com/user \
-            -d "{\"avatar_url\": \"data:$MIME_TYPE;base64,$AVATAR_BASE64\"}")
+            --data @"$JSON_FILE" \
+            https://api.github.com/user)
           
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
           echo "📡 API Response Code: $HTTP_CODE"
           
           if [ "$HTTP_CODE" -eq 200 ]; then
             echo "✅ Avatar updated successfully!"
-            echo "👤 Check your GitHub profile!"
           else
             echo "❌ Failed to update avatar. HTTP Code: $HTTP_CODE"
             echo "Response: $(echo "$RESPONSE" | head -n -1)"
             exit 1
           fi
 
+      - name: Cleanup
+        run: |
+          rm -f optimized_avatar avatar_base64.txt request.json 2>/dev/null || true
+          echo "🧹 Temporary files cleaned up"
+
       - name: Completion message
         run: |
           echo "🎉 Workflow completed successfully!"
           echo "🕐 Time: $(date)"
           echo "🖼️ Image: $SELECTED_AVATAR"
-          echo "📁 Path: $(pwd)/$SELECTED_AVATAR"
