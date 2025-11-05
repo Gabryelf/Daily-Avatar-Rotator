@@ -97,7 +97,7 @@ git push
 
 ## 📊 Статус
 
-![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/ваш-username/ваш-репозиторий/update-avatar.yml?label=Avatar%20Update&style=for-the-badge)
+![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/Gabryelf/Daily-Avatar-Rotator/update-avatar.yml?label=Avatar%20Update&style=for-the-badge)
 
 **Последнее обновление:**  
 ![Last Update](https://img.shields.io/badge/dynamic/json?url=https://api.github.com/repos/Gabryelf/Daily-Avatar-Rotator/actions/workflows/update-avatar.yml/runs&label=last%20update&query=%24.workflow_runs[0].updated_at&style=for-the-badge)
