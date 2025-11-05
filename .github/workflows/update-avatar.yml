@@ -15,14 +15,25 @@ jobs:
           echo "GIST_ID=$GIST_ID" >> $GITHUB_ENV
 
       - name: Get avatars list from Gist
+        env:
+          GH_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
         run: |
-          # Получаем список всех файлов из Gist (кроме json)
-          curl -s "https://api.github.com/gists/$GIST_ID" | \
-          jq -r '.files | to_entries | map(select(.key | endswith(".json") | not)) | map(.key) | .[]' > avatars.txt
+          # Получаем информацию о Gist с аутентификацией
+          curl -s -H "Authorization: token $GH_TOKEN" \
+            "https://api.github.com/gists/$GIST_ID" > gist_info.json
+          
+          # Парсим список файлов
+          cat gist_info.json | jq -r '.files | keys[]' > avatars.txt
           
           AVATAR_COUNT=$(wc -l < avatars.txt)
-          echo "Found $AVATAR_COUNT avatars"
+          echo "Found $AVATAR_COUNT avatars:"
+          cat avatars.txt
           echo "AVATAR_COUNT=$AVATAR_COUNT" >> $GITHUB_ENV
+          
+          # Сохраняем raw_url для первого файла (для отладки)
+          FIRST_FILE=$(head -1 avatars.txt)
+          RAW_URL=$(cat gist_info.json | jq -r ".files[\"$FIRST_FILE\"].raw_url")
+          echo "RAW_URL=$RAW_URL" >> $GITHUB_ENV
 
       - name: Select random avatar
         run: |
@@ -37,10 +48,28 @@ jobs:
           echo "Selected: $AVATAR_FILE (index: $RANDOM_INDEX)"
 
       - name: Download selected avatar
+        env:
+          GH_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
         run: |
-          curl -s "https://gist.githubusercontent.com/${{ github.repository_owner }}/$GIST_ID/raw/$SELECTED_AVATAR" \
-            -o selected_avatar
-          echo "Downloaded $SELECTED_AVATAR"
+          # Скачиваем через API с аутентификацией
+          curl -s -H "Authorization: token $GH_TOKEN" \
+            "https://api.github.com/gists/$GIST_ID" > gist_data.json
+          
+          # Получаем raw_url для выбранного файла
+          RAW_URL=$(cat gist_data.json | jq -r ".files[\"$SELECTED_AVATAR\"].raw_url")
+          echo "Raw URL: $RAW_URL"
+          
+          # Скачиваем файл
+          curl -s -H "Authorization: token $GH_TOKEN" "$RAW_URL" -o selected_avatar
+          
+          # Проверяем что файл скачался
+          if [ -s "selected_avatar" ]; then
+            echo "✅ Successfully downloaded $SELECTED_AVATAR"
+            echo "📊 File size: $(wc -c < selected_avatar) bytes"
+          else
+            echo "❌ Failed to download $SELECTED_AVATAR"
+            exit 1
+          fi
 
       - name: Update GitHub avatar
         uses: peaceiris/actions-avatar@v1
@@ -50,4 +79,5 @@ jobs:
 
       - name: Log timestamp
         run: |
-          echo "Avatar updated at: $(date)"
+          echo "✅ Avatar updated at: $(date)"
+          echo "🖼️ Used image: $SELECTED_AVATAR"
