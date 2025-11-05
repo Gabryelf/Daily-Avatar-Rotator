@@ -1,9 +1,9 @@
-name: Force Avatar Update
+name: Simple Avatar Update
 
 on:
-  schedule:
-    - cron: '* * * * *'
   workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * *'
 
 jobs:
   update-avatar:
@@ -14,66 +14,67 @@ jobs:
         with:
           token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
 
-      - name: Select and update avatar
+      - name: Select random avatar
+        run: |
+          # Находим все изображения
+          mapfile -t AVATARS < <(find avatars/ -type f \( -name "*.png" -o -name "*.jpg" -o -name "*.jpeg" \))
+          TOTAL=${#AVATARS[@]}
+          
+          if [ $TOTAL -eq 0 ]; then
+            echo "❌ No avatars found!"
+            exit 1
+          fi
+          
+          RANDOM_INDEX=$(( RANDOM % TOTAL ))
+          SELECTED="${AVATARS[$RANDOM_INDEX]}"
+          echo "SELECTED_AVATAR=$SELECTED" >> $GITHUB_ENV
+          echo "🎲 Selected: $SELECTED"
+
+      - name: Update avatar using Python
         env:
           GH_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
         run: |
-          # Выбираем случайную аватарку
-          mapfile -t AVATARS < <(find avatars/ -type f \( -name "*.png" -o -name "*.jpg" -o -name "*.jpeg" \))
-          SELECTED="${AVATARS[$RANDOM % ${#AVATARS[@]}]}"
-          echo "🎲 Selected: $SELECTED"
-          
-          # Используем Python для надежной отправки
           python3 -c "
-import base64
-import requests
-import os
-from datetime import datetime
-
-avatar_file = '$SELECTED'
-token = os.environ['GH_TOKEN']
-
-# Читаем файл
-with open(avatar_file, 'rb') as f:
-    image_data = f.read()
-
-base64_data = base64.b64encode(image_data).decode('utf-8')
-
-# Определяем MIME тип
-if avatar_file.endswith('.png'):
-    mime_type = 'image/png'
-else:
-    mime_type = 'image/jpeg'
-
-# Добавляем timestamp для избежания кэширования
-timestamp = int(datetime.now().timestamp())
-avatar_url = f'data:{mime_type};base64,{base64_data}?t={timestamp}'
-
-print(f'🖼️ Updating avatar with {len(base64_data)} chars base64 data')
-print(f'🕐 Timestamp: {timestamp}')
-
-# Отправляем запрос
-headers = {
-    'Authorization': f'token {token}',
-    'Accept': 'application/vnd.github.v3+json',
-    'Content-Type': 'application/json'
-}
-
-data = {'avatar_url': avatar_url}
-
-response = requests.patch('https://api.github.com/user', headers=headers, json=data)
-
-print(f'📡 Status Code: {response.status_code}')
-print(f'📨 Response: {response.text}')
-
-if response.status_code == 200:
-    print('✅ Avatar updated successfully!')
-    # Дополнительная проверка - получаем текущий профиль
-    user_response = requests.get('https://api.github.com/user', headers=headers)
-    if user_response.status_code == 200:
-        user_data = user_response.json()
-        print(f'👤 Current avatar URL: {user_data[\"avatar_url\"]}')
-else:
-    print('❌ Failed to update avatar')
-    exit(1)
+          import base64
+          import requests
+          import os
+          
+          avatar_file = os.environ['SELECTED_AVATAR']
+          token = os.environ['GH_TOKEN']
+          
+          # Читаем и кодируем файл
+          with open(avatar_file, 'rb') as f:
+              image_data = f.read()
+          
+          base64_data = base64.b64encode(image_data).decode('utf-8')
+          
+          # Определяем MIME тип
+          if avatar_file.endswith('.png'):
+              mime_type = 'image/png'
+          else:
+              mime_type = 'image/jpeg'
+          
+          # Отправляем запрос
+          headers = {
+              'Authorization': f'token {token}',
+              'Accept': 'application/vnd.github.v3+json'
+          }
+          
+          data = {
+              'avatar_url': f'data:{mime_type};base64,{base64_data}'
+          }
+          
+          response = requests.patch('https://api.github.com/user', headers=headers, json=data)
+          
+          if response.status_code == 200:
+              print('✅ Avatar updated successfully!')
+          else:
+              print(f'❌ Failed: {response.status_code}')
+              print(response.text)
+              exit(1)
           "
+
+      - name: Success message
+        run: |
+          echo "🎉 Avatar updated at: $(date)"
+          echo "🖼️ Used: $SELECTED_AVATAR"
