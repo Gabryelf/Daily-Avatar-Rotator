@@ -2,7 +2,7 @@ name: Update Avatar from Gist
 
 on:
   schedule:
-    - cron: '0 0 * * *'  # Ежедневно в полночь
+    - cron: '* * * * *'  # Ежедневно в полночь
   workflow_dispatch:      # Ручной запуск
 
 jobs:
