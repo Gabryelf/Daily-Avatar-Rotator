@@ -1,9 +1,12 @@
-name: Update Avatar from Gist
+name: Update Avatar from Repository
 
 on:
   schedule:
     - cron: '* * * * *'  # Ежедневно в полночь
   workflow_dispatch:      # Ручной запуск
+  push:
+    paths:
+      - 'avatars/**'     # Запуск при изменении файлов в avatars
 
 jobs:
   update-avatar:
@@ -11,59 +14,80 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
 
-      - name: Get Gist files list
-        env:
-          GIST_ID: "c09a3c324259654275939f31e0219ac9"
-          GH_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+      - name: List available avatars
         run: |
-          # Получаем информацию о Gist
-          curl -s -H "Authorization: token $GH_TOKEN" \
-            "https://api.github.com/gists/$GIST_ID" > gist_info.json
+          echo "📁 Checking avatars directory..."
+          ls -la avatars/ || echo "❌ avatars directory not found"
           
-          # Извлекаем список всех файлов
-          cat gist_info.json | jq -r '.files | keys[]' > avatars.txt
-          
-          echo "📁 Files in Gist:"
-          cat avatars.txt
-          
-          AVATAR_COUNT=$(wc -l < avatars.txt)
-          echo "📊 Total avatars: $AVATAR_COUNT"
-          echo "AVATAR_COUNT=$AVATAR_COUNT" >> $GITHUB_ENV
+          echo "🖼️ Available avatar files:"
+          find avatars/ -type f \( -name "*.png" -o -name "*.jpg" -o -name "*.jpeg" \) | while read file; do
+            size=$(wc -c < "$file")
+            echo " - $file ($size bytes)"
+          done
 
       - name: Select random avatar
         run: |
-          if [ $AVATAR_COUNT -eq 0 ]; then
-            echo "❌ No avatars found in Gist!"
+          # Создаем массив с путями к аватаркам
+          mapfile -t AVATARS < <(find avatars/ -type f \( -name "*.png" -o -name "*.jpg" -o -name "*.jpeg" \))
+          
+          TOTAL_AVATARS=${#AVATARS[@]}
+          echo "📊 Total avatars found: $TOTAL_AVATARS"
+          
+          if [ $TOTAL_AVATARS -eq 0 ]; then
+            echo "❌ ERROR: No image files found in avatars directory!"
+            echo "💡 Please add PNG/JPG files to the avatars folder"
             exit 1
           fi
           
-          mapfile -t AVATAR_FILES < avatars.txt
-          RANDOM_INDEX=$(( RANDOM % AVATAR_COUNT ))
-          SELECTED_AVATAR="${AVATAR_FILES[$RANDOM_INDEX]}"
+          # Выбираем случайную аватарку
+          RANDOM_INDEX=$(( RANDOM % TOTAL_AVATARS ))
+          SELECTED_AVATAR="${AVATARS[$RANDOM_INDEX]}"
           
           echo "SELECTED_AVATAR=$SELECTED_AVATAR" >> $GITHUB_ENV
           echo "🎲 Selected: $SELECTED_AVATAR"
+          echo "🔢 Index: $RANDOM_INDEX of $TOTAL_AVATARS"
 
-      - name: Download avatar and update profile
+      - name: Validate selected avatar
+        run: |
+          echo "🔍 Validating selected avatar..."
+          echo "📁 File: $SELECTED_AVATAR"
+          
+          # Проверяем существование файла
+          if [ ! -f "$SELECTED_AVATAR" ]; then
+            echo "❌ ERROR: Selected file not found!"
+            exit 1
+          fi
+          
+          # Проверяем размер файла
+          FILE_SIZE=$(wc -c < "$SELECTED_AVATAR")
+          echo "📏 File size: $FILE_SIZE bytes"
+          
+          if [ $FILE_SIZE -gt 1000000 ]; then
+            echo "⚠️ WARNING: File size exceeds 1MB recommended limit"
+          fi
+          
+          # Проверяем тип файла
+          FILE_TYPE=$(file -b "$SELECTED_AVATAR")
+          echo "📄 File type: $FILE_TYPE"
+          
+          if [[ ! "$FILE_TYPE" =~ (PNG|JPEG|JPEG image) ]]; then
+            echo "❌ ERROR: File is not a valid PNG/JPEG image!"
+            exit 1
+          fi
+
+      - name: Update GitHub avatar via API
         env:
-          GIST_ID: "c09a3c324259654275939f31e0219ac9"
           GH_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
         run: |
-          # Получаем raw_url для выбранного файла
-          curl -s -H "Authorization: token $GH_TOKEN" \
-            "https://api.github.com/gists/$GIST_ID" > gist_data.json
-          
-          RAW_URL=$(cat gist_data.json | jq -r ".files[\"$SELECTED_AVATAR\"].raw_url")
-          echo "🔗 Raw URL: $RAW_URL"
-          
-          # Скачиваем файл и конвертируем в base64
-          curl -s -H "Authorization: token $GH_TOKEN" "$RAW_URL" -o avatar_image
+          echo "🔄 Updating profile avatar..."
           
           # Конвертируем изображение в base64
-          AVATAR_BASE64=$(base64 -w 0 avatar_image)
+          AVATAR_BASE64=$(base64 -w 0 "$SELECTED_AVATAR")
           
-          # Определяем MIME тип по расширению файла
+          # Определяем MIME тип
           if [[ "$SELECTED_AVATAR" == *.png ]]; then
             MIME_TYPE="image/png"
           elif [[ "$SELECTED_AVATAR" == *.jpg ]] || [[ "$SELECTED_AVATAR" == *.jpeg ]]; then
@@ -72,21 +96,31 @@ jobs:
             MIME_TYPE="image/png"
           fi
           
-          echo "📊 File type: $MIME_TYPE"
-          echo "📏 File size: $(wc -c < avatar_image) bytes"
+          echo "🖼️ MIME type: $MIME_TYPE"
           
           # Обновляем аватар через GitHub API
-          curl -X PATCH \
+          RESPONSE=$(curl -s -w "%{http_code}" -X PATCH \
             -H "Authorization: token $GH_TOKEN" \
             -H "Accept: application/vnd.github.v3+json" \
             -H "Content-Type: application/json" \
             https://api.github.com/user \
-            -d "{\"avatar_url\": \"data:$MIME_TYPE;base64,$AVATAR_BASE64\"}"
+            -d "{\"avatar_url\": \"data:$MIME_TYPE;base64,$AVATAR_BASE64\"}")
           
-          echo "✅ Avatar update request sent!"
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          echo "📡 API Response Code: $HTTP_CODE"
+          
+          if [ "$HTTP_CODE" -eq 200 ]; then
+            echo "✅ Avatar updated successfully!"
+            echo "👤 Check your GitHub profile!"
+          else
+            echo "❌ Failed to update avatar. HTTP Code: $HTTP_CODE"
+            echo "Response: $(echo "$RESPONSE" | head -n -1)"
+            exit 1
+          fi
 
       - name: Completion message
         run: |
-          echo "🎉 Avatar updated successfully!"
+          echo "🎉 Workflow completed successfully!"
           echo "🕐 Time: $(date)"
           echo "🖼️ Image: $SELECTED_AVATAR"
+          echo "📁 Path: $(pwd)/$SELECTED_AVATAR"
