@@ -11,7 +11,7 @@ jobs:
     steps:
       - name: Setup environment
         run: |
-          GIST_ID="ВАШ_GIST_ID"
+          GIST_ID="c09a3c324259654275939f31e0219ac9"
           echo "GIST_ID=$GIST_ID" >> $GITHUB_ENV
 
       - name: Get avatars list from Gist
