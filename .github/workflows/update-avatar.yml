@@ -1,83 +1,92 @@
-name: Test Avatar Change Every Minute from Gist
+name: Update Avatar from Gist
 
 on:
   schedule:
-    - cron: '* * * * *'  # Каждую минуту
-  workflow_dispatch:
+    - cron: '0 0 * * *'  # Ежедневно в полночь
+  workflow_dispatch:      # Ручной запуск
 
 jobs:
   update-avatar:
     runs-on: ubuntu-latest
     steps:
-      - name: Setup environment
-        run: |
-          GIST_ID="c09a3c324259654275939f31e0219ac9"
-          echo "GIST_ID=$GIST_ID" >> $GITHUB_ENV
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Get avatars list from Gist
+      - name: Get Gist files list
         env:
+          GIST_ID: "c09a3c324259654275939f31e0219ac9"
           GH_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
         run: |
-          # Получаем информацию о Gist с аутентификацией
+          # Получаем информацию о Gist
           curl -s -H "Authorization: token $GH_TOKEN" \
             "https://api.github.com/gists/$GIST_ID" > gist_info.json
           
-          # Парсим список файлов
+          # Извлекаем список всех файлов
           cat gist_info.json | jq -r '.files | keys[]' > avatars.txt
           
-          AVATAR_COUNT=$(wc -l < avatars.txt)
-          echo "Found $AVATAR_COUNT avatars:"
+          echo "📁 Files in Gist:"
           cat avatars.txt
-          echo "AVATAR_COUNT=$AVATAR_COUNT" >> $GITHUB_ENV
           
-          # Сохраняем raw_url для первого файла (для отладки)
-          FIRST_FILE=$(head -1 avatars.txt)
-          RAW_URL=$(cat gist_info.json | jq -r ".files[\"$FIRST_FILE\"].raw_url")
-          echo "RAW_URL=$RAW_URL" >> $GITHUB_ENV
+          AVATAR_COUNT=$(wc -l < avatars.txt)
+          echo "📊 Total avatars: $AVATAR_COUNT"
+          echo "AVATAR_COUNT=$AVATAR_COUNT" >> $GITHUB_ENV
 
       - name: Select random avatar
         run: |
           if [ $AVATAR_COUNT -eq 0 ]; then
-            echo "No avatars found!"
+            echo "❌ No avatars found in Gist!"
             exit 1
           fi
           
+          mapfile -t AVATAR_FILES < avatars.txt
           RANDOM_INDEX=$(( RANDOM % AVATAR_COUNT ))
-          AVATAR_FILE=$(sed -n "$((RANDOM_INDEX + 1))p" avatars.txt)
-          echo "SELECTED_AVATAR=$AVATAR_FILE" >> $GITHUB_ENV
-          echo "Selected: $AVATAR_FILE (index: $RANDOM_INDEX)"
+          SELECTED_AVATAR="${AVATAR_FILES[$RANDOM_INDEX]}"
+          
+          echo "SELECTED_AVATAR=$SELECTED_AVATAR" >> $GITHUB_ENV
+          echo "🎲 Selected: $SELECTED_AVATAR"
 
-      - name: Download selected avatar
+      - name: Download avatar and update profile
         env:
+          GIST_ID: "c09a3c324259654275939f31e0219ac9"
           GH_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
         run: |
-          # Скачиваем через API с аутентификацией
+          # Получаем raw_url для выбранного файла
           curl -s -H "Authorization: token $GH_TOKEN" \
             "https://api.github.com/gists/$GIST_ID" > gist_data.json
           
-          # Получаем raw_url для выбранного файла
           RAW_URL=$(cat gist_data.json | jq -r ".files[\"$SELECTED_AVATAR\"].raw_url")
-          echo "Raw URL: $RAW_URL"
+          echo "🔗 Raw URL: $RAW_URL"
           
-          # Скачиваем файл
-          curl -s -H "Authorization: token $GH_TOKEN" "$RAW_URL" -o selected_avatar
+          # Скачиваем файл и конвертируем в base64
+          curl -s -H "Authorization: token $GH_TOKEN" "$RAW_URL" -o avatar_image
           
-          # Проверяем что файл скачался
-          if [ -s "selected_avatar" ]; then
-            echo "✅ Successfully downloaded $SELECTED_AVATAR"
-            echo "📊 File size: $(wc -c < selected_avatar) bytes"
+          # Конвертируем изображение в base64
+          AVATAR_BASE64=$(base64 -w 0 avatar_image)
+          
+          # Определяем MIME тип по расширению файла
+          if [[ "$SELECTED_AVATAR" == *.png ]]; then
+            MIME_TYPE="image/png"
+          elif [[ "$SELECTED_AVATAR" == *.jpg ]] || [[ "$SELECTED_AVATAR" == *.jpeg ]]; then
+            MIME_TYPE="image/jpeg"
           else
-            echo "❌ Failed to download $SELECTED_AVATAR"
-            exit 1
+            MIME_TYPE="image/png"
           fi
+          
+          echo "📊 File type: $MIME_TYPE"
+          echo "📏 File size: $(wc -c < avatar_image) bytes"
+          
+          # Обновляем аватар через GitHub API
+          curl -X PATCH \
+            -H "Authorization: token $GH_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Content-Type: application/json" \
+            https://api.github.com/user \
+            -d "{\"avatar_url\": \"data:$MIME_TYPE;base64,$AVATAR_BASE64\"}"
+          
+          echo "✅ Avatar update request sent!"
 
-      - name: Update GitHub avatar
-        uses: peaceiris/actions-avatar@v1
-        with:
-          image-path: './selected_avatar'
-          github-token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
-
-      - name: Log timestamp
+      - name: Completion message
         run: |
-          echo "✅ Avatar updated at: $(date)"
-          echo "🖼️ Used image: $SELECTED_AVATAR"
+          echo "🎉 Avatar updated successfully!"
+          echo "🕐 Time: $(date)"
+          echo "🖼️ Image: $SELECTED_AVATAR"
