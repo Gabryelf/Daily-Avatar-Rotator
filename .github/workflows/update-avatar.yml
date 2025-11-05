@@ -1,0 +1,53 @@
+name: Test Avatar Change Every Minute from Gist
+
+on:
+  schedule:
+    - cron: '* * * * *'  # Каждую минуту
+  workflow_dispatch:
+
+jobs:
+  update-avatar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup environment
+        run: |
+          GIST_ID="ВАШ_GIST_ID"
+          echo "GIST_ID=$GIST_ID" >> $GITHUB_ENV
+
+      - name: Get avatars list from Gist
+        run: |
+          # Получаем список всех файлов из Gist (кроме json)
+          curl -s "https://api.github.com/gists/$GIST_ID" | \
+          jq -r '.files | to_entries | map(select(.key | endswith(".json") | not)) | map(.key) | .[]' > avatars.txt
+          
+          AVATAR_COUNT=$(wc -l < avatars.txt)
+          echo "Found $AVATAR_COUNT avatars"
+          echo "AVATAR_COUNT=$AVATAR_COUNT" >> $GITHUB_ENV
+
+      - name: Select random avatar
+        run: |
+          if [ $AVATAR_COUNT -eq 0 ]; then
+            echo "No avatars found!"
+            exit 1
+          fi
+          
+          RANDOM_INDEX=$(( RANDOM % AVATAR_COUNT ))
+          AVATAR_FILE=$(sed -n "$((RANDOM_INDEX + 1))p" avatars.txt)
+          echo "SELECTED_AVATAR=$AVATAR_FILE" >> $GITHUB_ENV
+          echo "Selected: $AVATAR_FILE (index: $RANDOM_INDEX)"
+
+      - name: Download selected avatar
+        run: |
+          curl -s "https://gist.githubusercontent.com/${{ github.repository_owner }}/$GIST_ID/raw/$SELECTED_AVATAR" \
+            -o selected_avatar
+          echo "Downloaded $SELECTED_AVATAR"
+
+      - name: Update GitHub avatar
+        uses: peaceiris/actions-avatar@v1
+        with:
+          image-path: './selected_avatar'
+          github-token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+
+      - name: Log timestamp
+        run: |
+          echo "Avatar updated at: $(date)"
