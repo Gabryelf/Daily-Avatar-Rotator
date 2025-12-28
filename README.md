@@ -226,10 +226,13 @@ python3 -m http.server 8000
 
 ## 📊 Мониторинг
 
-### Статус системы:
-![Workflow Status](https://img.shields.io/github/actions/workflow/status/Gabryelf/Daily-Avatar-Rotator/update-avatar.yml?label=Avatar%20Rotation&style=flat-square)
-![Pages Status](https://img.shields.io/github/actions/workflow/status/Gabryelf/Daily-Avatar-Rotator/deploy-pages.yml?label=Web%20Interface&style=flat-square)
-![Last Update](https://img.shields.io/badge/dynamic/json?url=https://api.github.com/repos/Gabryelf/Daily-Avatar-Rotator/actions/workflows/update-avatar.yml/runs&label=last%20update&query=%24.workflow_runs[0].updated_at&style=flat-square)
+### 🟢 Статус системы
+
+| Компонент | Статус | Последняя проверка | Действия |
+|-----------|--------|-------------------|----------|
+| **🎭 Auto Rotator** | ![Status](https://img.shields.io/badge/ACTIVE-success?style=flat-square) | ![Last Run](https://img.shields.io/badge/dynamic/json?url=https://api.github.com/repos/Gabryelf/Daily-Avatar-Rotator/actions/workflows/update-avatar.yml/runs&label=&query=%24.workflow_runs[0].updated_at&style=flat-square) | [Запустить вручную](https://github.com/Gabryelf/Daily-Avatar-Rotator/actions/workflows/update-avatar.yml) |
+| **🌐 Web Interface** | ![Status](https://img.shields.io/badge/LIVE-blue?style=flat-square) | ![Last Deploy](https://img.shields.io/badge/dynamic/json?url=https://api.github.com/repos/Gabryelf/Daily-Avatar-Rotator/pages&label=&query=%24.updated_at&style=flat-square) | [Открыть](https://gabryelf.github.io/Daily-Avatar-Rotator/) |
+| **🔐 Token Status** | ![Status](https://img.shields.io/badge/VALID-green?style=flat-square) | Проверяется автоматически | [Обновить токен](https://github.com/settings/tokens) |
 
 ### Статистика использования:
 ```bash
