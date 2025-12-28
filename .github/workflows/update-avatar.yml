@@ -1,9 +1,25 @@
-name: Simple Avatar Update
+# .github/workflows/update-avatar.yml
+name: Update Avatar from Repository
 
 on:
   workflow_dispatch:
+    inputs:
+      avatar_name:
+        description: 'Имя файла аватара (например: avatar1.png)'
+        required: false
+        default: ''
+        type: string
+      force_update:
+        description: 'Принудительное обновление'
+        required: false
+        default: false
+        type: boolean
   schedule:
-    - cron: '0 0 * * *'
+    - cron: '0 0 * * *'  # Ежедневно в полночь UTC
+  push:
+    branches: [ main ]
+    paths:
+      - 'selected_avatar.json'  # Отслеживаем изменения конфига
 
 jobs:
   update-avatar:
@@ -13,68 +29,242 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
-
-      - name: Select random avatar
+          fetch-depth: 0
+      
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Определяем какой аватар использовать
+        id: select-avatar
         run: |
-          # Находим все изображения
-          mapfile -t AVATARS < <(find avatars/ -type f \( -name "*.png" -o -name "*.jpg" -o -name "*.jpeg" \))
-          TOTAL=${#AVATARS[@]}
+          echo "🔍 Начинаем выбор аватара..."
           
-          if [ $TOTAL -eq 0 ]; then
-            echo "❌ No avatars found!"
+          # Вариант 1: Аватар из ручного запуска workflow
+          if [ -n "${{ github.event.inputs.avatar_name }}" ]; then
+            SELECTED="${{ github.event.inputs.avatar_name }}"
+            echo "🎯 Используем аватар из ручного запуска: $SELECTED"
+            MODE="manual_input"
+          
+          # Вариант 2: Аватар из конфигурационного файла
+          elif [ -f "selected_avatar.json" ]; then
+            echo "📁 Найден конфигурационный файл"
+            SELECTED=$(python3 -c "
+import json
+try:
+    with open('selected_avatar.json', 'r') as f:
+        config = json.load(f)
+    print(config.get('selectedAvatar', ''))
+except:
+    print('')
+            " 2>/dev/null || echo "")
+            
+            if [ -n "$SELECTED" ] && [ -f "avatars/$SELECTED" ]; then
+              echo "🎯 Используем аватар из конфигурации: $SELECTED"
+              MODE="config_file"
+            else
+              echo "⚠️ Файл конфигурации поврежден или аватар не найден"
+              SELECTED=""
+              MODE="random"
+            fi
+          
+          # Вариант 3: Случайный выбор
+          else
+            SELECTED=""
+            MODE="random"
+          fi
+          
+          # Если аватар не выбран - выбираем случайный
+          if [ -z "$SELECTED" ]; then
+            echo "🎲 Выбираем случайный аватар..."
+            mapfile -t AVATARS < <(find avatars/ -type f \( -name "*.png" -o -name "*.jpg" -o -name "*.jpeg" \) | sort)
+            TOTAL=${#AVATARS[@]}
+            
+            if [ $TOTAL -eq 0 ]; then
+              echo "❌ Нет доступных аватаров в папке avatars/"
+              echo "📁 Содержимое папки avatars/:"
+              ls -la avatars/ || echo "Папка не существует"
+              exit 1
+            fi
+            
+            # Используем номер запуска для детерминированного случайного выбора
+            RUN_NUMBER=${GITHUB_RUN_NUMBER:-$RANDOM}
+            INDEX=$((RUN_NUMBER % TOTAL))
+            SELECTED="${AVATARS[$INDEX]}"
+            SELECTED=$(basename "$SELECTED")
+            echo "🎲 Случайный выбор (#${RUN_NUMBER}): $SELECTED"
+          fi
+          
+          # Проверяем существование файла
+          if [ ! -f "avatars/$SELECTED" ]; then
+            echo "❌ Файл не найден: avatars/$SELECTED"
+            echo "📁 Доступные файлы:"
+            ls -la avatars/
             exit 1
           fi
           
-          RANDOM_INDEX=$(( RANDOM % TOTAL ))
-          SELECTED="${AVATARS[$RANDOM_INDEX]}"
+          echo "✅ Выбран аватар: $SELECTED"
           echo "SELECTED_AVATAR=$SELECTED" >> $GITHUB_ENV
-          echo "🎲 Selected: $SELECTED"
-
-      - name: Update avatar using Python
+          echo "SELECTED_MODE=$MODE" >> $GITHUB_ENV
+          echo "avatar_path=avatars/$SELECTED" >> $GITHUB_ENV
+      
+      - name: Обновляем аватар профиля
         env:
           GH_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+          AVATAR_PATH: ${{ env.avatar_path }}
+          SELECTED_AVATAR: ${{ env.SELECTED_AVATAR }}
         run: |
-          python3 -c "
-          import base64
-          import requests
-          import os
+          echo "🔄 Обновляем аватар GitHub профиля..."
+          echo "📁 Файл: $AVATAR_PATH"
+          echo "🔧 Режим: $SELECTED_MODE"
           
-          avatar_file = os.environ['SELECTED_AVATAR']
-          token = os.environ['GH_TOKEN']
-          
-          # Читаем и кодируем файл
-          with open(avatar_file, 'rb') as f:
-              image_data = f.read()
-          
-          base64_data = base64.b64encode(image_data).decode('utf-8')
-          
-          # Определяем MIME тип
-          if avatar_file.endswith('.png'):
-              mime_type = 'image/png'
-          else:
-              mime_type = 'image/jpeg'
-          
-          # Отправляем запрос
-          headers = {
-              'Authorization': f'token {token}',
-              'Accept': 'application/vnd.github.v3+json'
-          }
-          
-          data = {
-              'avatar_url': f'data:{mime_type};base64,{base64_data}'
-          }
-          
-          response = requests.patch('https://api.github.com/user', headers=headers, json=data)
-          
-          if response.status_code == 200:
-              print('✅ Avatar updated successfully!')
-          else:
-              print(f'❌ Failed: {response.status_code}')
-              print(response.text)
-              exit(1)
-          "
+          python3 << 'EOF'
+import base64
+import requests
+import os
+import json
+from pathlib import Path
 
-      - name: Success message
+avatar_path = os.environ['AVATAR_PATH']
+token = os.environ['GH_TOKEN']
+selected_avatar = os.environ['SELECTED_AVATAR']
+selected_mode = os.environ.get('SELECTED_MODE', 'unknown')
+
+print(f"📄 Читаем файл: {avatar_path}")
+print(f"📊 Размер файла: {os.path.getsize(avatar_path)} байт")
+
+# Проверяем существование файла
+if not os.path.exists(avatar_path):
+    print(f"❌ Файл не найден: {avatar_path}")
+    exit(1)
+
+# Читаем файл
+with open(avatar_path, 'rb') as f:
+    image_data = f.read()
+
+base64_data = base64.b64encode(image_data).decode('utf-8')
+
+# Определяем MIME тип
+if avatar_path.lower().endswith('.png'):
+    mime_type = 'image/png'
+else:
+    mime_type = 'image/jpeg'
+
+# Отправляем запрос на обновление аватара
+headers = {
+    'Authorization': f'token {token}',
+    'Accept': 'application/vnd.github.v3+json',
+    'Content-Type': 'application/json'
+}
+
+data = {
+    'avatar_url': f'data:{mime_type};base64,{base64_data}'
+}
+
+try:
+    print("🌐 Отправляем запрос к GitHub API...")
+    response = requests.patch(
+        'https://api.github.com/user',
+        headers=headers,
+        json=data,
+        timeout=30
+    )
+    
+    if response.status_code == 200:
+        print('✅ Аватар успешно обновлен!')
+        
+        # Сохраняем информацию об обновлении
+        update_info = {
+            'avatar': selected_avatar,
+            'mode': selected_mode,
+            'timestamp': os.environ.get('GITHUB_SHA', ''),
+            'workflow_run': os.environ.get('GITHUB_RUN_ID', ''),
+            'run_number': os.environ.get('GITHUB_RUN_NUMBER', ''),
+            'time': os.environ.get('GITHUB_RUN_ATTEMPT', ''),
+            'status': 'success'
+        }
+        
+        # Сохраняем историю
+        history_file = 'avatar_history.json'
+        history = []
+        
+        if os.path.exists(history_file):
+            try:
+                with open(history_file, 'r') as f:
+                    history = json.load(f)
+            except:
+                history = []
+        
+        # Добавляем новую запись в начало
+        history.insert(0, update_info)
+        # Сохраняем только последние 20 записей
+        history = history[:20]
+        
+        with open(history_file, 'w') as f:
+            json.dump(history, f, indent=2)
+        
+        # Очищаем конфигурационный файл если использовали его
+        if selected_mode == 'config_file' and os.path.exists('selected_avatar.json'):
+            os.remove('selected_avatar.json')
+            print("🗑️ Конфигурационный файл очищен")
+            
+    else:
+        print(f'❌ Ошибка от GitHub API: {response.status_code}')
+        print(f'📄 Ответ: {response.text}')
+        
+        # Сохраняем информацию об ошибке
+        error_info = {
+            'avatar': selected_avatar,
+            'mode': selected_mode,
+            'timestamp': os.environ.get('GITHUB_SHA', ''),
+            'error_code': response.status_code,
+            'error_text': response.text[:500],
+            'status': 'error'
+        }
+        
+        error_file = 'avatar_errors.json'
+        errors = []
+        
+        if os.path.exists(error_file):
+            try:
+                with open(error_file, 'r') as f:
+                    errors = json.load(f)
+            except:
+                errors = []
+        
+        errors.insert(0, error_info)
+        errors = errors[:10]
+        
+        with open(error_file, 'w') as f:
+            json.dump(errors, f, indent=2)
+            
+        exit(1)
+        
+except Exception as e:
+    print(f'❌ Ошибка при отправке запроса: {str(e)}')
+    exit(1)
+EOF
+      
+      - name: Создаем summary отчета
+        if: always()
         run: |
-          echo "🎉 Avatar updated at: $(date)"
-          echo "🖼️ Used: $SELECTED_AVATAR"
+          echo "## 🎭 Обновление аватара" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Информация о запуске" >> $GITHUB_STEP_SUMMARY
+          echo "- **Время:** $(date '+%Y-%m-%d %H:%M:%S %Z')" >> $GITHUB_STEP_SUMMARY
+          echo "- **Аватар:** [${{ env.SELECTED_AVATAR }}](https://github.com/${{ github.repository }}/blob/main/avatars/${{ env.SELECTED_AVATAR }})" >> $GITHUB_STEP_SUMMARY
+          echo "- **Режим выбора:** ${{ env.SELECTED_MODE }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Статус:** ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Ссылки" >> $GITHUB_STEP_SUMMARY
+          echo "- [📁 Папка с аватарами](https://github.com/${{ github.repository }}/tree/main/avatars)" >> $GITHUB_STEP_SUMMARY
+          echo "- [📊 История обновлений](https://github.com/${{ github.repository }}/blob/main/avatar_history.json)" >> $GITHUB_STEP_SUMMARY
+          echo "- [🔄 Запустить снова](${{ github.server_url }}/${{ github.repository }}/actions/workflows/update-avatar.yml)" >> $GITHUB_STEP_SUMMARY
+      
+      - name: Уведомление о завершении
+        if: success()
+        run: |
+          echo "🎉 Аватар успешно обновлен!"
+          echo "📸 Использован файл: ${{ env.SELECTED_AVATAR }}"
+          echo "⏰ Время: $(date)"
