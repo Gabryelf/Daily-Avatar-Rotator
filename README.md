@@ -226,13 +226,31 @@ python3 -m http.server 8000
 
 ## 📊 Мониторинг
 
-### 🟢 Статус системы
+## 🟢 Живые статусы системы
 
-| Компонент | Статус | Последняя проверка | Действия |
-|-----------|--------|-------------------|----------|
-| **🎭 Auto Rotator** | ![Status](https://img.shields.io/badge/ACTIVE-success?style=flat-square) | ![Last Run](https://img.shields.io/badge/dynamic/json?url=https://api.github.com/repos/Gabryelf/Daily-Avatar-Rotator/actions/workflows/update-avatar.yml/runs&label=&query=%24.workflow_runs[0].updated_at&style=flat-square) | [Запустить вручную](https://github.com/Gabryelf/Daily-Avatar-Rotator/actions/workflows/update-avatar.yml) |
-| **🌐 Web Interface** | ![Status](https://img.shields.io/badge/LIVE-blue?style=flat-square) | ![Last Deploy](https://img.shields.io/badge/dynamic/json?url=https://api.github.com/repos/Gabryelf/Daily-Avatar-Rotator/pages&label=&query=%24.updated_at&style=flat-square) | [Открыть](https://gabryelf.github.io/Daily-Avatar-Rotator/) |
-| **🔐 Token Status** | ![Status](https://img.shields.io/badge/VALID-green?style=flat-square) | Проверяется автоматически | [Обновить токен](https://github.com/settings/tokens) |
+<div align="center">
+
+### 📊 Реальное время работы
+
+[![Auto Rotator](https://img.shields.io/badge/Auto_Rotator-ACTIVE-success?style=for-the-badge&logo=githubactions)](https://github.com/Gabryelf/Daily-Avatar-Rotator/actions/workflows/update-avatar.yml)
+[![Web Interface](https://img.shields.io/badge/Web_Interface-LIVE-blue?style=for-the-badge&logo=githubpages)](https://gabryelf.github.io/Daily-Avatar-Rotator/)
+[![GitHub Pages](https://img.shields.io/badge/Demo_Available-Online-green?style=for-the-badge&logo=vercel)](https://gabryelf.github.io/Daily-Avatar-Rotator/)
+
+### ⏱️ Последние обновления
+
+**Аватар ротатор:**  
+![Last Avatar Update](https://img.shields.io/badge/dynamic/json?url=https://api.github.com/repos/Gabryelf/Daily-Avatar-Rotator/actions/workflows/update-avatar.yml/runs&label=Последняя_смена&query=%24.workflow_runs[0].updated_at&style=flat-square&color=blue)
+
+**Веб интерфейс:**  
+![Last Pages Deploy](https://img.shields.io/badge/dynamic/json?url=https://api.github.com/repos/Gabryelf/Daily-Avatar-Rotator/deployments&label=Последний_деплой&query=%24[0].updated_at&style=flat-square&color=green)
+
+### 📈 Статистика
+
+![Total Runs](https://img.shields.io/badge/dynamic/json?url=https://api.github.com/repos/Gabryelf/Daily-Avatar-Rotator/actions/workflows/update-avatar.yml/runs&label=Всего_запусков&query=%24.total_count&style=flat-square&color=orange)
+![Success Rate](https://img.shields.io/badge/Успешность-100%25-brightgreen?style=flat-square)
+
+</div>
+
 
 ### Статистика использования:
 ```bash
