@@ -1,0 +1,9 @@
+{
+  "repo": "Daily-Avatar-Rotator",
+  "owner": "ваш-username",
+  "workflow": "update-avatar.yml",
+  "avatarFolder": "avatars",
+  "schedule": "0 0 * * *",
+  "allowedFormats": ["png", "jpg", "jpeg"],
+  "maxSize": 1048576
+}
