@@ -1,72 +1,36 @@
 // docs/script.js
 class AvatarManager {
     constructor() {
-        this.apiBase = 'https://api.github.com';
-        this.repo = window.location.pathname.split('/')[1] || 'Daily-Avatar-Rotator';
-        this.currentUser = null;
-        this.avatars = [];
+        this.repoOwner = 'Gabryelf';
+        this.repoName = 'Daily-Avatar-Rotator';
+        this.workflowFile = 'update-avatar.yml';
         this.selectedAvatar = null;
-        
+        this.avatars = [];
         this.init();
     }
 
     async init() {
         this.bindEvents();
-        await this.checkAuth();
-        await this.loadStatus();
+        await this.loadSystemStatus();
         await this.loadAvatars();
         await this.loadHistory();
     }
 
     bindEvents() {
-        // Кнопки действий
-        document.getElementById('btn-manual-update').addEventListener('click', () => this.manualUpdate());
-        document.getElementById('btn-select-random').addEventListener('click', () => this.selectRandom());
-        document.getElementById('btn-test-selected').addEventListener('click', () => this.testSelected());
-        document.getElementById('btn-refresh-list').addEventListener('click', () => this.loadAvatars());
-        document.getElementById('btn-upload').addEventListener('click', () => this.triggerUpload());
-        document.getElementById('btn-save-schedule').addEventListener('click', () => this.saveSchedule());
-        
-        // Загрузка файлов
-        document.getElementById('avatar-upload').addEventListener('change', (e) => this.handleUpload(e));
-        
-        // Модальное окно
-        document.querySelector('.modal-close').addEventListener('click', () => this.closeModal());
-        document.getElementById('btn-set-avatar').addEventListener('click', () => this.setAvatar());
-        document.getElementById('btn-delete-avatar').addEventListener('click', () => this.deleteAvatar());
+        // Основные кнопки
+        document.getElementById('btn-refresh').addEventListener('click', () => this.loadAvatars());
+        document.getElementById('btn-select-random').addEventListener('click', () => this.selectRandomAvatar());
+        document.getElementById('btn-run-selected').addEventListener('click', () => this.runSelectedAvatar());
+        document.getElementById('btn-clear-selection').addEventListener('click', () => this.clearSelection());
+        document.getElementById('btn-manual-setup').addEventListener('click', () => this.showManualInstructions());
         document.getElementById('notification-close').addEventListener('click', () => this.hideNotification());
-        
-        // Закрытие модального окна по клику вне его
-        document.getElementById('preview-modal').addEventListener('click', (e) => {
-            if (e.target.id === 'preview-modal') this.closeModal();
-        });
     }
 
-    async checkAuth() {
+    async loadSystemStatus() {
         try {
-            // Пытаемся получить информацию о пользователе через GitHub API
-            const response = await fetch(`${this.apiBase}/user`);
-            if (response.ok) {
-                this.currentUser = await response.json();
-                return true;
-            }
-            return false;
-        } catch (error) {
-            console.error('Auth check failed:', error);
-            return false;
-        }
-    }
-
-    async loadStatus() {
-        try {
-            // Получаем статус workflow
+            // Загружаем статус workflow
             const response = await fetch(
-                `https://api.github.com/repos/${this.currentUser.login}/${this.repo}/actions/runs?event=schedule`,
-                {
-                    headers: {
-                        'Accept': 'application/vnd.github.v3+json'
-                    }
-                }
+                `https://api.github.com/repos/${this.repoOwner}/${this.repoName}/actions/runs?per_page=1`
             );
             
             if (response.ok) {
@@ -74,32 +38,51 @@ class AvatarManager {
                 const lastRun = data.workflow_runs[0];
                 
                 if (lastRun) {
-                    document.getElementById('last-update').textContent = 
-                        new Date(lastRun.updated_at).toLocaleString('ru-RU');
-                    
                     const statusElement = document.getElementById('status');
-                    statusElement.className = `status ${lastRun.conclusion === 'success' ? 'success' : 'error'}`;
+                    const isSuccess = lastRun.conclusion === 'success';
+                    
+                    statusElement.className = `status-badge ${isSuccess ? 'status-success' : 'status-pending'}`;
                     statusElement.innerHTML = `
-                        <i class="fas fa-${lastRun.conclusion === 'success' ? 'check-circle' : 'exclamation-circle'}"></i>
-                        Последнее обновление: ${lastRun.conclusion === 'success' ? '✅ Успешно' : '❌ Ошибка'}
+                        <i class="fas fa-${isSuccess ? 'check-circle' : 'sync-alt'}"></i>
+                        ${isSuccess ? 'Работает' : 'Ожидание'}
                     `;
+                    
+                    // Форматируем дату
+                    const lastDate = new Date(lastRun.created_at);
+                    const now = new Date();
+                    const diffHours = Math.floor((now - lastDate) / (1000 * 60 * 60));
+                    
+                    let timeText;
+                    if (diffHours < 1) {
+                        timeText = 'менее часа назад';
+                    } else if (diffHours < 24) {
+                        timeText = `${diffHours} ${this.pluralize(diffHours, ['час', 'часа', 'часов'])} назад`;
+                    } else {
+                        const diffDays = Math.floor(diffHours / 24);
+                        timeText = `${diffDays} ${this.pluralize(diffDays, ['день', 'дня', 'дней'])} назад`;
+                    }
+                    
+                    document.getElementById('last-update').textContent = timeText;
+                    
+                    // Следующее обновление (примерно через 24 часа после последнего)
+                    const nextUpdate = new Date(lastDate);
+                    nextUpdate.setHours(nextUpdate.getHours() + 24);
+                    document.getElementById('next-update').textContent = 
+                        nextUpdate.toLocaleDateString('ru-RU');
                 }
             }
         } catch (error) {
-            console.error('Failed to load status:', error);
+            console.error('Error loading system status:', error);
         }
     }
 
     async loadAvatars() {
+        const gallery = document.getElementById('avatar-gallery');
+        gallery.innerHTML = '<div class="loading"><i class="fas fa-spinner fa-spin"></i> Загрузка аватаров...</div>';
+        
         try {
-            // Получаем список файлов из репозитория
             const response = await fetch(
-                `https://api.github.com/repos/${this.currentUser.login}/${this.repo}/contents/avatars`,
-                {
-                    headers: {
-                        'Accept': 'application/vnd.github.v3+json'
-                    }
-                }
+                `https://api.github.com/repos/${this.repoOwner}/${this.repoName}/contents/avatars`
             );
             
             if (response.ok) {
@@ -111,322 +94,270 @@ class AvatarManager {
                 
                 this.renderGallery();
                 document.getElementById('avatar-count').textContent = this.avatars.length;
+                
+                if (this.avatars.length === 0) {
+                    gallery.innerHTML = `
+                        <div class="empty-state">
+                            <i class="fas fa-image"></i>
+                            <p>Нет доступных аватаров</p>
+                            <p style="font-size: 0.9rem; margin-top: 10px;">
+                                Добавьте изображения в папку <code>avatars/</code> репозитория
+                            </p>
+                        </div>
+                    `;
+                }
+            } else {
+                throw new Error(`HTTP ${response.status}`);
             }
         } catch (error) {
-            console.error('Failed to load avatars:', error);
-            this.showNotification('Не удалось загрузить список аватаров', 'error');
+            console.error('Error loading avatars:', error);
+            gallery.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <p>Не удалось загрузить аватары</p>
+                    <p style="font-size: 0.9rem; margin-top: 10px;">
+                        Ошибка: ${error.message}
+                    </p>
+                </div>
+            `;
         }
     }
 
     renderGallery() {
         const gallery = document.getElementById('avatar-gallery');
         
-        if (this.avatars.length === 0) {
-            gallery.innerHTML = `
-                <div class="empty-gallery">
-                    <i class="fas fa-image" style="font-size: 48px; color: #8b949e; margin-bottom: 20px;"></i>
-                    <p>Нет доступных аватаров</p>
-                    <p class="text-muted">Загрузите изображения в папку avatars/</p>
+        gallery.innerHTML = this.avatars.map(avatar => {
+            const isSelected = this.selectedAvatar && this.selectedAvatar.name === avatar.name;
+            return `
+                <div class="avatar-item ${isSelected ? 'selected' : ''}" 
+                     data-name="${avatar.name}" 
+                     data-url="${avatar.download_url}">
+                    <img src="${avatar.download_url}" 
+                         alt="${avatar.name}"
+                         loading="lazy"
+                         onerror="this.src='https://via.placeholder.com/150?text=Ошибка'">
+                    <div class="avatar-name">${avatar.name}</div>
                 </div>
             `;
-            return;
-        }
-        
-        gallery.innerHTML = this.avatars.map(avatar => `
-            <div class="avatar-item" data-name="${avatar.name}" data-url="${avatar.download_url}">
-                <img src="${avatar.download_url}" alt="${avatar.name}" 
-                     loading="lazy" onerror="this.src='https://via.placeholder.com/150?text=Error'">
-                <div class="avatar-name">${avatar.name}</div>
-            </div>
-        `).join('');
+        }).join('');
         
         // Добавляем обработчики кликов
         document.querySelectorAll('.avatar-item').forEach(item => {
             item.addEventListener('click', (e) => {
                 const name = item.dataset.name;
                 const url = item.dataset.url;
-                this.previewAvatar(name, url);
+                this.selectAvatar(name, url);
             });
         });
     }
 
-    previewAvatar(name, url) {
+    selectAvatar(name, url) {
         this.selectedAvatar = { name, url };
         
-        // Обновляем модальное окно
-        document.getElementById('modal-preview').src = url;
-        document.getElementById('modal-filename').textContent = name;
+        // Обновляем UI
+        document.getElementById('selected-name').textContent = name;
+        document.getElementById('selected-info').style.display = 'block';
+        document.getElementById('btn-run-selected').disabled = false;
         
-        // Получаем размер файла
-        fetch(url).then(res => {
-            const size = res.headers.get('content-length');
-            document.getElementById('modal-size').textContent = 
-                size ? `${(size / 1024).toFixed(2)} KB` : 'Неизвестно';
-        });
+        // Обновляем галерею
+        this.renderGallery();
         
-        // Открываем модальное окно
-        document.getElementById('preview-modal').classList.remove('hidden');
-        
-        // Обновляем текущий аватар в интерфейсе
+        // Обновляем предпросмотр
         document.getElementById('current-avatar').src = url;
-        document.getElementById('current-filename').textContent = name;
+        
+        this.showNotification(`Выбран аватар: ${name}`, 'success');
     }
 
-    async manualUpdate() {
-        try {
-            this.showNotification('Запуск обновления аватара...', 'info');
-            
-            // Здесь должен быть вызов GitHub API для запуска workflow
-            // Это требует специального токена с правами на запуск workflow
-            
-            const response = await fetch(
-                `https://api.github.com/repos/${this.currentUser.login}/${this.repo}/actions/workflows/update-avatar.yml/dispatches`,
-                {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `token ${this.getToken()}`,
-                        'Accept': 'application/vnd.github.v3+json'
-                    },
-                    body: JSON.stringify({
-                        ref: 'main'
-                    })
-                }
-            );
-            
-            if (response.ok) {
-                this.showNotification('Обновление запущено успешно!', 'success');
-                setTimeout(() => this.loadStatus(), 5000);
-            } else {
-                throw new Error(`HTTP ${response.status}`);
-            }
-        } catch (error) {
-            console.error('Manual update failed:', error);
-            this.showNotification('Не удалось запустить обновление', 'error');
-        }
-    }
-
-    selectRandom() {
+    selectRandomAvatar() {
         if (this.avatars.length === 0) {
-            this.showNotification('Нет доступных аватаров', 'warning');
+            this.showNotification('Нет доступных аватаров', 'error');
             return;
         }
         
         const randomIndex = Math.floor(Math.random() * this.avatars.length);
         const randomAvatar = this.avatars[randomIndex];
-        this.previewAvatar(randomAvatar.name, randomAvatar.download_url);
-        this.showNotification(`Выбран аватар: ${randomAvatar.name}`, 'success');
+        this.selectAvatar(randomAvatar.name, randomAvatar.download_url);
     }
 
-    async testSelected() {
+    clearSelection() {
+        this.selectedAvatar = null;
+        document.getElementById('selected-info').style.display = 'none';
+        document.getElementById('btn-run-selected').disabled = true;
+        this.renderGallery();
+        this.showNotification('Выбор сброшен', 'info');
+    }
+
+    runSelectedAvatar() {
         if (!this.selectedAvatar) {
             this.showNotification('Сначала выберите аватар', 'warning');
             return;
         }
         
-        this.showNotification('Тестирование аватара...', 'info');
-        // Здесь можно добавить предпросмотр или другие тесты
-        setTimeout(() => {
-            this.showNotification('Аватар готов к использованию!', 'success');
-        }, 1000);
+        this.showWorkflowInstructions(this.selectedAvatar.name);
     }
 
-    triggerUpload() {
-        document.getElementById('avatar-upload').click();
-    }
-
-    async handleUpload(event) {
-        const files = Array.from(event.target.files);
-        
-        if (files.length === 0) return;
-        
-        this.showNotification(`Загрузка ${files.length} файлов...`, 'info');
-        
-        // В реальном приложении здесь будет загрузка через GitHub API
-        // Для демо просто добавляем в список
-        files.forEach(file => {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const newAvatar = {
-                    name: file.name,
-                    download_url: e.target.result,
-                    size: file.size
-                };
-                this.avatars.push(newAvatar);
-                this.renderGallery();
-            };
-            reader.readAsDataURL(file);
-        });
-        
-        this.showNotification(`Загружено ${files.length} файлов`, 'success');
-        event.target.value = ''; // Сбрасываем input
-    }
-
-    async saveSchedule() {
-        const schedule = document.getElementById('schedule-select').value;
-        
-        // Здесь будет сохранение расписания в workflow файл через GitHub API
-        this.showNotification('Расписание сохранено', 'success');
-        
-        // Обновляем информацию о следующем обновлении
-        this.updateNextScheduleTime(schedule);
-    }
-
-    updateNextScheduleTime(schedule) {
-        const nextUpdate = this.calculateNextCron(schedule);
-        document.getElementById('next-update').textContent = 
-            nextUpdate ? nextUpdate.toLocaleString('ru-RU') : 'Вручную';
-    }
-
-    calculateNextCron(cronExpression) {
-        if (cronExpression === 'manual') return null;
-        
-        // Простая реализация расчета следующего времени
-        // В реальном приложении используйте библиотеку типа cron-parser
-        const now = new Date();
-        const next = new Date(now);
-        next.setHours(next.getHours() + 24); // Просто для примера
-        return next;
-    }
-
-    async setAvatar() {
-        if (!this.selectedAvatar) return;
-        
-        this.showNotification('Установка аватара...', 'info');
-        
-        // Здесь будет вызов GitHub API для установки аватара
-        // Требуется токен с правами user
-        
-        try {
-            // Это примерный код, требуется настройка CORS и токена
-            const response = await fetch(`${this.apiBase}/user`, {
-                method: 'PATCH',
-                headers: {
-                    'Authorization': `token ${this.getToken()}`,
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/vnd.github.v3+json'
-                },
-                body: JSON.stringify({
-                    // Нужно преобразовать изображение в base64
-                })
-            });
+    showWorkflowInstructions(avatarName) {
+        const instructions = `
+            <h3>🚀 Применение аватара "${avatarName}"</h3>
             
-            if (response.ok) {
-                this.showNotification('Аватар успешно установлен!', 'success');
-                this.closeModal();
-                this.loadStatus();
-            }
-        } catch (error) {
-            this.showNotification('Ошибка при установке аватара', 'error');
-        }
+            <p>Для применения аватара через GitHub Actions:</p>
+            
+            <div style="background: rgba(0,0,0,0.2); padding: 20px; border-radius: 8px; margin: 20px 0;">
+                <h4>📝 Способ 1: Через GitHub Actions (рекомендуется)</h4>
+                <ol style="margin-top: 10px;">
+                    <li>Перейдите по <a href="https://github.com/Gabryelf/Daily-Avatar-Rotator/actions/workflows/update-avatar.yml" target="_blank">ссылке</a></li>
+                    <li>Нажмите <strong>"Run workflow"</strong> справа</li>
+                    <li>В поле <code>avatar_name</code> введите: <code>${avatarName}</code></li>
+                    <li>Нажмите <strong>"Run workflow"</strong></li>
+                </ol>
+            </div>
+            
+            <div style="background: rgba(0,0,0,0.2); padding: 20px; border-radius: 8px; margin: 20px 0;">
+                <h4>⚡ Способ 2: Через конфигурационный файл</h4>
+                <p>Создайте файл <code>selected_avatar.json</code> в корне репозитория:</p>
+                <pre style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 6px; overflow: auto; margin: 10px 0;">
+{
+  "selectedAvatar": "${avatarName}",
+  "timestamp": "${new Date().toISOString()}"
+}</pre>
+                <p>Затем закоммитьте и запушьте изменения. Workflow автоматически применит аватар.</p>
+            </div>
+            
+            <p><strong>⏱️ Аватар обновится в течение 1-2 минут после запуска workflow.</strong></p>
+        `;
+        
+        this.showNotification(instructions, 'info', true);
     }
 
-    async deleteAvatar() {
-        if (!this.selectedAvatar || !confirm('Удалить этот аватар?')) return;
+    showManualInstructions() {
+        const instructions = `
+            <h3>📖 Ручная настройка аватара</h3>
+            
+            <p>Если вы хотите вручную обновить аватар без интерфейса:</p>
+            
+            <div style="background: rgba(0,0,0,0.2); padding: 20px; border-radius: 8px; margin: 20px 0;">
+                <h4>1. Через терминал</h4>
+                <pre style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 6px; overflow: auto;">
+# Клонируйте репозиторий
+git clone https://github.com/Gabryelf/Daily-Avatar-Rotator.git
+cd Daily-Avatar-Rotator
+
+# Добавьте аватар в папку avatars/
+cp /путь/к/изображению.png avatars/
+
+# Создайте конфигурационный файл
+echo '{
+  "selectedAvatar": "изображение.png",
+  "timestamp": "${new Date().toISOString()}"
+}' > selected_avatar.json
+
+# Закоммитьте изменения
+git add .
+git commit -m "Add new avatar"
+git push</pre>
+            </div>
+            
+            <div style="background: rgba(0,0,0,0.2); padding: 20px; border-radius: 8px; margin: 20px 0;">
+                <h4>2. Через GitHub UI</h4>
+                <ol>
+                    <li>Перейдите в ваш репозиторий на GitHub</li>
+                    <li>Добавьте файл в папку <code>avatars/</code></li>
+                    <li>Создайте файл <code>selected_avatar.json</code> в корне</li>
+                    <li>Дождитесь запуска workflow</li>
+                </ol>
+            </div>
+        `;
         
-        // Удаление через GitHub API
-        this.showNotification('Аватар удалён (демо)', 'success');
-        this.closeModal();
-        setTimeout(() => this.loadAvatars(), 1000);
+        this.showNotification(instructions, 'info', true);
     }
 
     async loadHistory() {
         try {
-            // Получаем историю workflow runs
             const response = await fetch(
-                `https://api.github.com/repos/${this.currentUser.login}/${this.repo}/actions/runs`,
-                {
-                    headers: {
-                        'Accept': 'application/vnd.github.v3+json'
-                    }
-                }
+                `https://api.github.com/repos/${this.repoOwner}/${this.repoName}/contents/avatar_history.json`
             );
             
             if (response.ok) {
-                const data = await response.json();
-                this.renderHistory(data.workflow_runs.slice(0, 10));
+                const file = await response.json();
+                const content = atob(file.content);
+                const history = JSON.parse(content);
+                
+                this.renderHistory(history);
             }
         } catch (error) {
-            console.error('Failed to load history:', error);
+            // Если файла нет - показываем пустую историю
+            this.renderHistory([]);
         }
     }
 
-    renderHistory(runs) {
-        const tbody = document.getElementById('history-body');
+    renderHistory(history) {
+        const container = document.getElementById('history-list');
         
-        if (!runs || runs.length === 0) {
-            tbody.innerHTML = `
-                <tr>
-                    <td colspan="4" class="text-center">Нет данных об обновлениях</td>
-                </tr>
+        if (!history || history.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-history"></i>
+                    <p>История обновлений пока пуста</p>
+                </div>
             `;
             return;
         }
         
-        tbody.innerHTML = runs.map(run => `
-            <tr>
-                <td>${new Date(run.created_at).toLocaleString('ru-RU')}</td>
-                <td>${run.display_title || 'Обновление аватара'}</td>
-                <td>
-                    <span class="badge ${run.conclusion === 'success' ? 'badge-success' : 'badge-danger'}">
-                        ${run.conclusion === 'success' ? '✅ Успешно' : '❌ Ошибка'}
+        container.innerHTML = history.map(item => `
+            <div class="history-item">
+                <div>
+                    <strong>${item.avatar}</strong>
+                    <div style="font-size: 0.9rem; color: #8b949e; margin-top: 5px;">
+                        ${new Date(item.timestamp || item.time).toLocaleDateString('ru-RU')}
+                        • ${item.mode === 'manual_input' ? 'Ручной' : item.mode === 'config_file' ? 'Конфиг' : 'Случайный'}
+                    </div>
+                </div>
+                <div>
+                    <span style="color: ${item.status === 'success' ? '#3fb950' : '#f85149'};">
+                        ${item.status === 'success' ? '✅' : '❌'}
                     </span>
-                </td>
-                <td>
-                    <a href="${run.html_url}" target="_blank" class="btn-link">
-                        <i class="fas fa-external-link-alt"></i> Подробности
-                    </a>
-                </td>
-            </tr>
+                </div>
+            </div>
         `).join('');
     }
 
-    showNotification(message, type = 'info') {
+    showNotification(message, type = 'info', isHtml = false) {
         const notification = document.getElementById('notification');
         const text = document.getElementById('notification-text');
         
-        text.textContent = message;
-        notification.className = `notification ${type}`;
-        notification.classList.remove('hidden');
+        if (isHtml) {
+            text.innerHTML = message;
+        } else {
+            text.textContent = message;
+        }
         
-        // Автоматическое скрытие через 5 секунд
-        setTimeout(() => this.hideNotification(), 5000);
+        notification.className = 'notification';
+        notification.style.borderLeftColor = {
+            'success': '#238636',
+            'error': '#f85149',
+            'warning': '#d29922',
+            'info': '#1f6feb'
+        }[type] || '#1f6feb';
+        
+        // Автоматическое скрытие через 8 секунд
+        setTimeout(() => {
+            if (!notification.classList.contains('hidden')) {
+                this.hideNotification();
+            }
+        }, 8000);
     }
 
     hideNotification() {
         document.getElementById('notification').classList.add('hidden');
     }
 
-    closeModal() {
-        document.getElementById('preview-modal').classList.add('hidden');
-    }
-
-    getToken() {
-        // В реальном приложении токен должен храниться безопасно
-        // Это демо-версия
-        return localStorage.getItem('github_token') || '';
+    pluralize(number, words) {
+        const cases = [2, 0, 1, 1, 1, 2];
+        return words[(number % 100 > 4 && number % 100 < 20) ? 2 : cases[Math.min(number % 10, 5)]];
     }
 }
 
 // Инициализация при загрузке страницы
 document.addEventListener('DOMContentLoaded', () => {
     window.avatarManager = new AvatarManager();
-    
-    // Обновляем время следующего обновления
-    const scheduleSelect = document.getElementById('schedule-select');
-    if (scheduleSelect) {
-        scheduleSelect.addEventListener('change', (e) => {
-            avatarManager.updateNextScheduleTime(e.target.value);
-        });
-        avatarManager.updateNextScheduleTime(scheduleSelect.value);
-    }
 });
-
-// Вспомогательные функции
-function formatBytes(bytes, decimals = 2) {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const dm = decimals < 0 ? 0 : decimals;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-}
