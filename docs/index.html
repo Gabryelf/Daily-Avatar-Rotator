@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<!-- docs/index.html -->
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎭 Daily Avatar Rotator - Панель управления</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- Шапка -->
+        <header class="header">
+            <h1><i class="fas fa-robot"></i> Daily Avatar Rotator</h1>
+            <p class="subtitle">Панель управления автоматической сменой аватара GitHub</p>
+        </header>
+
+        <!-- Основная информация -->
+        <div class="info-card">
+            <div class="info-section">
+                <h2><i class="fas fa-info-circle"></i> Статус системы</h2>
+                <div id="status" class="status pending">
+                    <i class="fas fa-sync fa-spin"></i> Загрузка статуса...
+                </div>
+                
+                <div class="stats">
+                    <div class="stat-item">
+                        <i class="fas fa-images"></i>
+                        <span>Аватаров доступно: <strong id="avatar-count">0</strong></span>
+                    </div>
+                    <div class="stat-item">
+                        <i class="fas fa-clock"></i>
+                        <span>Следующее обновление: <strong id="next-update">...</strong></span>
+                    </div>
+                    <div class="stat-item">
+                        <i class="fas fa-history"></i>
+                        <span>Последнее обновление: <strong id="last-update">Неизвестно</strong></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Основные секции -->
+        <div class="main-content">
+            <!-- Левая колонка: Предпросмотр и управление -->
+            <div class="left-column">
+                <!-- Текущий аватар -->
+                <div class="card">
+                    <h3><i class="fas fa-user-circle"></i> Текущий аватар</h3>
+                    <div class="avatar-preview">
+                        <img id="current-avatar" src="" alt="Текущий аватар">
+                        <div class="avatar-info">
+                            <p><strong>Файл:</strong> <span id="current-filename">Не выбран</span></p>
+                            <p><strong>Размер:</strong> <span id="current-size">-</span></p>
+                            <p><strong>Обновлен:</strong> <span id="current-updated">-</span></p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Быстрые действия -->
+                <div class="card">
+                    <h3><i class="fas fa-bolt"></i> Быстрые действия</h3>
+                    <div class="actions">
+                        <button id="btn-manual-update" class="btn btn-primary">
+                            <i class="fas fa-sync"></i> Обновить сейчас
+                        </button>
+                        <button id="btn-select-random" class="btn btn-secondary">
+                            <i class="fas fa-random"></i> Выбрать случайный
+                        </button>
+                        <button id="btn-test-selected" class="btn btn-success">
+                            <i class="fas fa-vial"></i> Протестировать выбранный
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Настройки расписания -->
+                <div class="card">
+                    <h3><i class="fas fa-calendar-alt"></i> Расписание</h3>
+                    <div class="schedule-controls">
+                        <label for="schedule-select">Частота обновления:</label>
+                        <select id="schedule-select" class="form-select">
+                            <option value="0 0 * * *">Ежедневно (00:00 UTC)</option>
+                            <option value="0 */6 * * *">Каждые 6 часов</option>
+                            <option value="0 */12 * * *">Каждые 12 часов</option>
+                            <option value="0 9 * * *">Ежедневно в 09:00 UTC</option>
+                            <option value="0 12,18 * * *">В 12:00 и 18:00 UTC</option>
+                            <option value="manual">Только вручную</option>
+                        </select>
+                        <button id="btn-save-schedule" class="btn btn-primary mt-2">
+                            <i class="fas fa-save"></i> Сохранить расписание
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Правая колонка: Галерея аватаров -->
+            <div class="right-column">
+                <div class="card">
+                    <h3><i class="fas fa-th"></i> Галерея аватаров</h3>
+                    <div class="gallery-controls">
+                        <input type="file" id="avatar-upload" accept=".png,.jpg,.jpeg" multiple hidden>
+                        <button id="btn-upload" class="btn btn-secondary">
+                            <i class="fas fa-upload"></i> Загрузить новые
+                        </button>
+                        <button id="btn-refresh-list" class="btn btn-outline">
+                            <i class="fas fa-redo"></i> Обновить список
+                        </button>
+                    </div>
+                    
+                    <div class="gallery" id="avatar-gallery">
+                        <!-- Аватары будут загружены здесь -->
+                        <div class="loading">
+                            <i class="fas fa-spinner fa-spin"></i> Загрузка галереи...
+                        </div>
+                    </div>
+                    
+                    <div class="gallery-info">
+                        <p><i class="fas fa-info-circle"></i> Нажмите на аватар для предпросмотра</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- История обновлений -->
+        <div class="card full-width">
+            <h3><i class="fas fa-history"></i> История обновлений</h3>
+            <div class="table-responsive">
+                <table class="history-table">
+                    <thead>
+                        <tr>
+                            <th>Дата</th>
+                            <th>Аватар</th>
+                            <th>Статус</th>
+                            <th>Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-body">
+                        <tr>
+                            <td colspan="4" class="text-center">Загрузка истории...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Уведомления -->
+        <div id="notification" class="notification hidden">
+            <span id="notification-text"></span>
+            <button id="notification-close" class="notification-close">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Модальное окно предпросмотра -->
+    <div id="preview-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Предпросмотр аватара</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <img id="modal-preview" src="" alt="Предпросмотр">
+                <div class="modal-info">
+                    <p><strong>Файл:</strong> <span id="modal-filename"></span></p>
+                    <p><strong>Размер:</strong> <span id="modal-size"></span></p>
+                    <div class="modal-actions">
+                        <button id="btn-set-avatar" class="btn btn-primary">
+                            <i class="fas fa-check"></i> Установить этот аватар
+                        </button>
+                        <button id="btn-delete-avatar" class="btn btn-danger">
+                            <i class="fas fa-trash"></i> Удалить
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
