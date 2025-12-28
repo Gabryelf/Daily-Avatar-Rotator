@@ -1,6 +1,6 @@
 {
   "repo": "Daily-Avatar-Rotator",
-  "owner": "ваш-username",
+  "owner": "Gabryelf",
   "workflow": "update-avatar.yml",
   "avatarFolder": "avatars",
   "schedule": "0 0 * * *",
